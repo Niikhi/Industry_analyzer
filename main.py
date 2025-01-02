@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import streamlit as st
 from dotenv import load_dotenv
 from crewai import Task, Crew, Process
 from langchain_groq import ChatGroq
@@ -298,28 +299,99 @@ class AIResearchCrew:
             logger.error(f"Error in research process: {e}")
             raise
 
-
+def initialize_session():
+    if 'research_results' not in st.session_state:
+        st.session_state.research_results = None
+    if 'current_step' not in st.session_state:
+        st.session_state.current_step = 0
+    if 'download_ready' not in st.session_state:
+        st.session_state.download_ready = False
 
 def main():
+    st.set_page_config(page_title="AI Implementation Research Tool", layout="wide")
+    
+    st.title("AI Implementation Research Tool")
+    initialize_session()
+
     try:
-        # Initialize research crew
         crew = AIResearchCrew()
+        
+        with st.form("research_form"):
+            company_name = st.text_input("Enter Company Name:")
+            submit_button = st.form_submit_button("Start Research")
 
-        # Get company name with validation
-        company_name = input("Enter the company name to research: ").strip()
-        if not company_name:
-            raise ValueError("Company name cannot be empty")
+        if submit_button and company_name:
+            st.info("Research in progress... Please wait.")
+            
+            with st.spinner("Conducting research..."):
+                progress_bar = st.progress(0)
+                
+                # Update progress for each step
+                steps = ["Industry Research", "Market Analysis", "Resource Collection", "Proposal Generation"]
+                for i, step in enumerate(steps):
+                    progress_bar.progress((i + 1) * 25)
+                    st.write(f"Step {i+1}: {step}")
+                    
+                try:
+                    result = crew.run_research(company_name)
+                    st.session_state.research_results = result
+                    st.session_state.download_ready = True
+                    progress_bar.progress(100)
+                except Exception as e:
+                    st.error(f"Error during research: {str(e)}")
+                    return
 
-        # Run research process
-        logger.info(f"Starting research for {company_name}...")
-        result = crew.run_research(company_name)
-
-        logger.info("Research completed successfully!")
-        logger.info("Results saved to 'outputs' and 'reports' directories.")
+            if st.session_state.download_ready:
+                st.success("Research completed successfully!")
+                
+                # Display results in tabs
+                tab1, tab2, tab3, tab4 = st.tabs(["Company Research", "Use Cases", "Resources", "Proposal"])
+                
+                try:
+                    research_data = json.loads(str(result.tasks_output[0]))
+                    with tab1:
+                        st.json(research_data)
+                    
+                    use_cases = json.loads(str(result.tasks_output[1]))
+                    with tab2:
+                        st.json(use_cases)
+                    
+                    resources = json.loads(str(result.tasks_output[2]))
+                    with tab3:
+                        st.json(resources)
+                    
+                    with tab4:
+                        st.markdown(str(result.tasks_output[3]))
+                    
+                    # Add download buttons
+                    st.download_button(
+                        label="Download JSON Results",
+                        data=json.dumps({
+                            "company_info": research_data,
+                            "use_cases": use_cases,
+                            "resources": resources,
+                            "proposal": str(result.tasks_output[3])
+                        }, indent=2),
+                        file_name=f"{create_safe_filename(company_name)}_research_output.json",
+                        mime="application/json"
+                    )
+                    
+                    report_content = generate_markdown_report(
+                        company_name, research_data, use_cases, resources, str(result.tasks_output[3])
+                    )
+                    
+                    st.download_button(
+                        label="Download Markdown Report",
+                        data=report_content,
+                        file_name=f"{create_safe_filename(company_name)}_ai_proposal.md",
+                        mime="text/markdown"
+                    )
+                
+                except Exception as e:
+                    st.error(f"Error displaying results: {str(e)}")
 
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        raise
+        st.error(f"Application Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
