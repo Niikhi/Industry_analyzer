@@ -1,0 +1,9 @@
+requests
+streamlit
+openai
+crewai==0.11.0
+langchain==0.1.0
+langchain-groq
+python-dotenv==1.0.0
+requests==2.31.0
+typing-extensions==4.9.0
