@@ -135,7 +135,6 @@ class IndustryResearchAgent:
 
     def analyze_company(self, company_name: str) -> Dict[str, Any]:
         try:
-            # Search for company information
             company_results = self.search_industry(f"{company_name} company overview industry analysis")
             industry_results = self.search_industry(f"{company_name} industry trends AI ML adoption")
             

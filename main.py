@@ -32,32 +32,24 @@ def sanitize_json(input_str: str) -> dict:
     if isinstance(input_str, dict):
         return input_str
         
-    # If it's a TaskOutput object, convert to string
     if hasattr(input_str, 'raw'):
         input_str = str(input_str.raw)
     else:
         input_str = str(input_str)
     
-    # Remove any leading/trailing whitespace
     input_str = input_str.strip()
     
     try:
-        # First, try to parse as-is
         return json.loads(input_str)
     except json.JSONDecodeError:
-        try:
-            # If that fails, try to fix the structure
-            
-            # Split the input into industry sections
+        try:            
             sections = input_str.split('"], "')
             
             formatted_data = {}
             current_industry = None
             
             for section in sections:
-                # Look for industry markers
                 if '"' in section and ':' in section:
-                    # Extract industry name
                     industry_split = section.split('":')
                     if len(industry_split) >= 2:
                         current_industry = industry_split[0].strip().strip('"')
@@ -73,9 +65,7 @@ def sanitize_json(input_str: str) -> dict:
                     if use_cases_str.endswith(']'):
                         use_cases_str += ','
                     
-                    # Try to parse the use cases
                     try:
-                        # Ensure the string is a valid JSON array
                         if not use_cases_str.startswith('['):
                             use_cases_str = '[' + use_cases_str
                         if not use_cases_str.endswith(']'):
@@ -87,12 +77,10 @@ def sanitize_json(input_str: str) -> dict:
                         formatted_data[current_industry] = []
             
             if not formatted_data:
-                # If no industry sections found, try parsing as a simple array
                 input_str = input_str.strip()
                 if input_str.startswith('[') and input_str.endswith(']'):
                     return {"use_cases": json.loads(input_str)}
                 else:
-                    # Try to extract any array from the string
                     start = input_str.find('[')
                     end = input_str.rfind(']') + 1
                     if start != -1 and end != -1:
@@ -243,21 +231,15 @@ class AIResearchCrew:
             resources = {}
             proposal = ""
             
-            # Process each task output with better error handling
             if hasattr(result, 'tasks_output') and len(result.tasks_output) >= 4:
-                # Research Results (Task 0)
                 research_results = sanitize_json(result.tasks_output[0])
                 
-                # Use Cases (Task 1)
                 use_cases = sanitize_json(result.tasks_output[1])
                 
-                # Resources (Task 2)
                 resources = sanitize_json(result.tasks_output[2])
                 
-                # Proposal (Task 3) - Keep as string
                 proposal = str(result.tasks_output[3]).strip()
             
-            # Prepare the complete output
             json_output = {
                 "company_info": research_results,
                 "use_cases": use_cases,
@@ -265,11 +247,9 @@ class AIResearchCrew:
                 "proposal": proposal
             }
             
-            # Save JSON output
             output_path = os.path.join('outputs', f'{safe_company_name}_research_output.json')
             save_json_file(json_output, output_path)
             
-            # Generate and save markdown report
             report_content = generate_markdown_report(
                 company_name, research_results, use_cases, resources, proposal
             )
@@ -293,21 +273,18 @@ class AIResearchCrew:
     ## Use Cases and Solutions
 
     """
-        # Add use cases by domain
         for domain, use_cases in data['use_cases'].items():
             report += f"\n### {domain}\n"
             for use_case in use_cases:
                 report += f"\n#### {use_case['Use Case']}\n"
                 report += f"{use_case['Description']}\n\n"
 
-                # Add resources for this use case
                 matching_resources = data['resources'].get(use_case['Use Case'], {})
                 if matching_resources:
                     report += "**Relevant Resources:**\n"
                     for res_key, resource in matching_resources.items():
                         report += f"- [{resource['Name']}]({resource['URL']})\n  {resource['Description']}\n"
 
-        # Add the proposal section
         report += "\n## Implementation Plan\n"
         report += data['proposal']
 
@@ -336,17 +313,13 @@ class AIResearchCrew:
                 process=Process.sequential
             )
 
-            # Execute tasks
             result = crew.kickoff()
 
-            # Debugging: Log raw result and task outputs
             logger.debug(f"Raw result from crew.kickoff(): {result}")
 
             for i, task in enumerate(tasks):
                 print(f"DEBUG: Output of Task {i+1} ({task.description}):", task.output)
 
-
-            # Save results
             self.save_results(result, company_name)
 
             return result
@@ -382,7 +355,6 @@ def main():
             with st.spinner("Conducting research..."):
                 progress_bar = st.progress(0)
                 
-                # Update progress for each step
                 steps = ["Industry Research", "Market Analysis", "Resource Collection", "Proposal Generation"]
                 for i, step in enumerate(steps):
                     progress_bar.progress((i + 1) * 25)
@@ -400,7 +372,6 @@ def main():
             if st.session_state.download_ready:
                 st.success("Research completed successfully!")
                 
-                # Display results in tabs
                 tab1, tab2, tab3, tab4 = st.tabs(["Company Research", "Use Cases", "Resources", "Proposal"])
                 
                 try:
@@ -418,7 +389,6 @@ def main():
                     with tab4:
                         st.markdown(processed_results["proposal"])
                     
-                    # Add download buttons
                     st.download_button(
                         label="Download JSON Results",
                         data=json.dumps({

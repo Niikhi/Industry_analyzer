@@ -16,23 +16,18 @@ class ProposalAgent:
     ) -> Dict[str, str]:
         """Generate a comprehensive proposal with research summary and use cases."""
         try:
-            # Generate research summary using Groq
             research_summary = self._generate_research_summary(industry_data)
             
-            # Generate strategic analysis
             strategic_analysis = self._generate_strategic_analysis(industry_data, use_cases)
             
-            # Format use cases with resources
             implementation_plan = self._format_implementation_plan(use_cases, resources)
             
-            # Generate executive summary
             executive_summary = self._generate_executive_summary(
                 research_summary, 
                 strategic_analysis, 
                 use_cases
             )
             
-            # Combine all sections into final report
             full_report = f"""# AI Implementation Proposal
 
 {executive_summary}
@@ -60,12 +55,10 @@ class ProposalAgent:
     def _generate_research_summary(self, industry_data: Dict[str, Any]) -> str:
         """Generate a comprehensive research summary using company research data."""
         try:
-            # Extract company background
             company_info = industry_data.get("companyBackground", {})
             market_position = industry_data.get("marketPosition", {})
             industry_trends = industry_data.get("industryTrends", {})
 
-            # Format company overview
             company_overview = f"""## Company Overview
 
     **{company_info.get('name')}** is a {company_info.get('industry')} company headquartered in {company_info.get('headquarters')}. 
@@ -85,7 +78,6 @@ class ProposalAgent:
 
     **Key Industry Trends:**"""
 
-            # Add industry trends
             for trend in industry_trends.get('trends', []):
                 company_overview += f"\n\n**{trend.get('name')}**\n{trend.get('description')}"
 
@@ -127,7 +119,6 @@ class ProposalAgent:
         """Format detailed implementation plan with use cases and resources."""
         sections = ["## Implementation Plan"]
         
-        # Group use cases by domain/category
         grouped_cases = self._group_use_cases(use_cases)
         
         for domain, cases in grouped_cases.items():
@@ -141,7 +132,6 @@ class ProposalAgent:
         """Format a detailed use case with implementation details."""
         title = use_case.get('Use Case', f'Use Case {index}')
         
-        # Generate implementation details using Groq
         implementation_prompt = f"""
         For the following AI use case, provide detailed implementation guidance:
         {json.dumps(use_case, indent=2)}
@@ -157,7 +147,6 @@ class ProposalAgent:
         
         implementation_details = self._query_groq(implementation_prompt)
         
-        # Format resources
         resources_section = self._format_resources_section(title, resources)
         
         return f"""#### {index}. {title}
@@ -213,7 +202,6 @@ class ProposalAgent:
         if isinstance(use_cases, dict) and any(isinstance(v, list) for v in use_cases.values()):
             return use_cases
         
-        # If flat list, group by complexity or type
         cases = use_cases if isinstance(use_cases, list) else use_cases.get('use_cases', [])
         grouped = {}
         for case in cases:
