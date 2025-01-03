@@ -19,8 +19,96 @@ from agents.market_standards_agent import MarketStandardsAgent, create_market_st
 from agents.resource_asset_agent import ResourceAssetAgent, create_resource_agent
 from agents.proposal_agent import ProposalAgent, create_proposal_agent
 
+from utils.json_handler import parse_json_safely
+from utils.result_processor import process_research_results
+
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def sanitize_json(input_str: str) -> dict:
+    """Sanitize and validate JSON string from task output with industry-specific formatting."""
+    if isinstance(input_str, dict):
+        return input_str
+        
+    # If it's a TaskOutput object, convert to string
+    if hasattr(input_str, 'raw'):
+        input_str = str(input_str.raw)
+    else:
+        input_str = str(input_str)
+    
+    # Remove any leading/trailing whitespace
+    input_str = input_str.strip()
+    
+    try:
+        # First, try to parse as-is
+        return json.loads(input_str)
+    except json.JSONDecodeError:
+        try:
+            # If that fails, try to fix the structure
+            
+            # Split the input into industry sections
+            sections = input_str.split('"], "')
+            
+            formatted_data = {}
+            current_industry = None
+            
+            for section in sections:
+                # Look for industry markers
+                if '"' in section and ':' in section:
+                    # Extract industry name
+                    industry_split = section.split('":')
+                    if len(industry_split) >= 2:
+                        current_industry = industry_split[0].strip().strip('"')
+                        use_cases_str = industry_split[1]
+                else:
+                    use_cases_str = section
+                
+                if current_industry:
+                    # Clean up the use cases string
+                    use_cases_str = use_cases_str.strip()
+                    if use_cases_str.startswith('['):
+                        use_cases_str = use_cases_str
+                    if use_cases_str.endswith(']'):
+                        use_cases_str += ','
+                    
+                    # Try to parse the use cases
+                    try:
+                        # Ensure the string is a valid JSON array
+                        if not use_cases_str.startswith('['):
+                            use_cases_str = '[' + use_cases_str
+                        if not use_cases_str.endswith(']'):
+                            use_cases_str = use_cases_str + ']'
+                            
+                        use_cases = json.loads(use_cases_str)
+                        formatted_data[current_industry] = use_cases
+                    except json.JSONDecodeError:
+                        formatted_data[current_industry] = []
+            
+            if not formatted_data:
+                # If no industry sections found, try parsing as a simple array
+                input_str = input_str.strip()
+                if input_str.startswith('[') and input_str.endswith(']'):
+                    return {"use_cases": json.loads(input_str)}
+                else:
+                    # Try to extract any array from the string
+                    start = input_str.find('[')
+                    end = input_str.rfind(']') + 1
+                    if start != -1 and end != -1:
+                        array_str = input_str[start:end]
+                        return {"use_cases": json.loads(array_str)}
+            
+            return formatted_data
+
+        except Exception as e:
+            logger.error(f"Failed to parse JSON: {str(e)}")
+            logger.error(f"Raw input:\n{input_str[:500]}")
+            return {
+                "error": "Failed to parse JSON",
+                "raw_data": input_str[:500]
+            }
+
 
 class AIResearchCrew:
     def __init__(self):
@@ -116,7 +204,7 @@ class AIResearchCrew:
 
         # Task 4: Proposal Generation
         proposal_task = Task(
-            description="Create comprehensive implementation proposal.",
+        description="Create a comprehensive AI implementation proposal using company-specific data.",
             agent=self.proposal_agent,
             expected_output="Markdown formatted proposal",
             context=[
@@ -144,57 +232,31 @@ class AIResearchCrew:
         return [research_task, market_task, resource_task, proposal_task]
 
     def save_results(self, result, company_name: str) -> None:
-        """Save research results to files."""
+        """Save research results to files with improved error handling."""
         try:
-            # Ensure output directories exist
             ensure_directories('outputs', 'reports')
-            
-            # Create safe filename
             safe_company_name = create_safe_filename(company_name)
-
-            # Debug: Print raw task outputs
-            for i, output in enumerate(result.tasks_output):
-                logger.debug(f"Raw task output {i}:\n{output}")
-
-            # Process each task output with safer JSON parsing
-            try:
-                # Research results (Task 0)
-                try:
-                    research_results = json.loads(str(result.tasks_output[0]).strip())
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse research results: {str(e)}")
-                    logger.error(f"Raw research results:\n{result.tasks_output[0]}")
-                    research_results = {"error": "Failed to parse research results"}
-
-                # Use cases (Task 1)
-                try:
-                    use_cases_str = str(result.tasks_output[1]).strip()
-                    # Remove any trailing commas before the closing brace/bracket
-                    use_cases_str = use_cases_str.replace(',}', '}').replace(',]', ']')
-                    use_cases = json.loads(use_cases_str)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse use cases: {str(e)}")
-                    logger.error(f"Raw use cases:\n{result.tasks_output[1]}")
-                    use_cases = {"error": "Failed to parse use cases"}
-
+            
+            # Initialize default values
+            research_results = {}
+            use_cases = {}
+            resources = {}
+            proposal = ""
+            
+            # Process each task output with better error handling
+            if hasattr(result, 'tasks_output') and len(result.tasks_output) >= 4:
+                # Research Results (Task 0)
+                research_results = sanitize_json(result.tasks_output[0])
+                
+                # Use Cases (Task 1)
+                use_cases = sanitize_json(result.tasks_output[1])
+                
                 # Resources (Task 2)
-                try:
-                    resources_str = str(result.tasks_output[2]).strip()
-                    # Remove any trailing commas before the closing brace/bracket
-                    resources_str = resources_str.replace(',}', '}').replace(',]', ']')
-                    resources = json.loads(resources_str)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse resources: {str(e)}")
-                    logger.error(f"Raw resources:\n{result.tasks_output[2]}")
-                    resources = {"error": "Failed to parse resources"}
-
-                # Proposal (Task 3)
+                resources = sanitize_json(result.tasks_output[2])
+                
+                # Proposal (Task 3) - Keep as string
                 proposal = str(result.tasks_output[3]).strip()
-
-            except IndexError as e:
-                logger.error(f"Missing task output: {str(e)}")
-                raise
-
+            
             # Prepare the complete output
             json_output = {
                 "company_info": research_results,
@@ -202,26 +264,22 @@ class AIResearchCrew:
                 "resources": resources,
                 "proposal": proposal
             }
-
+            
             # Save JSON output
             output_path = os.path.join('outputs', f'{safe_company_name}_research_output.json')
             save_json_file(json_output, output_path)
-
+            
             # Generate and save markdown report
             report_content = generate_markdown_report(
                 company_name, research_results, use_cases, resources, proposal
             )
             report_path = os.path.join('reports', f'{safe_company_name}_ai_proposal.md')
             save_markdown_file(report_content, report_path)
-
+            
         except Exception as e:
             logger.error(f"Error in save_results: {str(e)}")
-            logger.error(f"Result object structure: {dir(result)}")
             if hasattr(result, 'tasks_output'):
-                logger.error(f"Tasks output length: {len(result.tasks_output)}")
-                # Print the problematic output
                 for i, output in enumerate(result.tasks_output):
-                    logger.error(f"Task {i} output type: {type(output)}")
                     logger.error(f"Task {i} output preview: {str(output)[:200]}...")
             raise
 
@@ -258,17 +316,14 @@ class AIResearchCrew:
     def run_research(self, company_name: str) -> Dict:
         """Execute the research process with proper error handling."""
         try:
-            # Validate input
             if not company_name or not isinstance(company_name, str):
                 raise ValueError("Invalid company name provided")
 
-            # Create and validate tasks
             tasks = self.create_tasks(company_name)
             for task in tasks:
                 if not task.expected_output:
                     raise ValueError(f"Missing expected output for task: {task.description}")
 
-            # Create and run crew
             crew = Crew(
                 agents=[
                     self.research_agent,
@@ -286,9 +341,10 @@ class AIResearchCrew:
 
             # Debugging: Log raw result and task outputs
             logger.debug(f"Raw result from crew.kickoff(): {result}")
-            for task in tasks:
-                logger.debug(f"Task: {task.description}")
-                logger.debug(f"Output: {task.output}")
+
+            for i, task in enumerate(tasks):
+                print(f"DEBUG: Output of Task {i+1} ({task.description}):", task.output)
+
 
             # Save results
             self.save_results(result, company_name)
@@ -348,36 +404,39 @@ def main():
                 tab1, tab2, tab3, tab4 = st.tabs(["Company Research", "Use Cases", "Resources", "Proposal"])
                 
                 try:
-                    research_data = json.loads(str(result.tasks_output[0]))
+                    processed_results = process_research_results(result)
+                    
                     with tab1:
-                        st.json(research_data)
+                        st.json(processed_results["research"])
                     
-                    use_cases = json.loads(str(result.tasks_output[1]))
                     with tab2:
-                        st.json(use_cases)
+                        st.json(processed_results["use_cases"])
                     
-                    resources = json.loads(str(result.tasks_output[2]))
                     with tab3:
-                        st.json(resources)
+                        st.json(processed_results["resources"])
                     
                     with tab4:
-                        st.markdown(str(result.tasks_output[3]))
+                        st.markdown(processed_results["proposal"])
                     
                     # Add download buttons
                     st.download_button(
                         label="Download JSON Results",
                         data=json.dumps({
-                            "company_info": research_data,
-                            "use_cases": use_cases,
-                            "resources": resources,
-                            "proposal": str(result.tasks_output[3])
+                            "company_info": processed_results["research"],
+                            "use_cases": processed_results["use_cases"],
+                            "resources": processed_results["resources"],
+                            "proposal": processed_results["proposal"]
                         }, indent=2),
                         file_name=f"{create_safe_filename(company_name)}_research_output.json",
                         mime="application/json"
                     )
                     
                     report_content = generate_markdown_report(
-                        company_name, research_data, use_cases, resources, str(result.tasks_output[3])
+                        company_name,
+                        processed_results["research"],
+                        processed_results["use_cases"],
+                        processed_results["resources"],
+                        processed_results["proposal"]
                     )
                     
                     st.download_button(
